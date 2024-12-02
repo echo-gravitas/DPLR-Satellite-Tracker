@@ -10,7 +10,7 @@ url ="https://celestrak.org/NORAD/elements/amateur.txt"
 satellites = load.tle_file(url)
 print(f"TLE Daten von {url} geladen.")
 
-satellite = {sat.name: sat for sat in satellites}["FUNCUBE-1 (AO-73)"]
+satellite = {sat.name: sat for sat in satellites}["DIWATA-2B"]
 
 # My station details
 station = wgs84.latlon(47.165101053547325, 8.295939429046944, elevation_m=495)
@@ -19,8 +19,8 @@ station = wgs84.latlon(47.165101053547325, 8.295939429046944, elevation_m=495)
 
 LIGHT_SPEED = 299792.458 # km/s
 
-def doppler_shift(sent_freq, relative_velocity):
-    return sent_freq * (LIGHT_SPEED / (LIGHT_SPEED - relative_velocity))
+def doppler_shift(freq, rad_vel):
+    return freq * (1 - (rad_vel / LIGHT_SPEED))
 
 # Rig Setup
 
@@ -28,32 +28,33 @@ Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
 myrig = Hamlib.Rig(rig_model=3085)
 myrig.set_conf("rig_pathname","/dev/tty.usbmodem142201")
 myrig.set_conf("retry","5")
+downlink_freq = 145900000
+update_interval = 1
 
 if myrig.open() != 0:
-    print("Verbindung offen")
-
-    uplink_freq = 145960000
-    update_interval = 1
-
-    print(satellite)
+    print(f"Verbindung zu {myrig.caps.mfg_name} {myrig.caps.model_name} hergestellt.")
 
     try:
         while True:
-            # Aktuelle Zeit
+            
             ts = load.timescale()
-            now = ts.now()
+            t = ts.now()
 
-            # Satellitenposition und Geschwindigkeit relativ zur Bodenstation
-            relative_position = (satellite - station).at(now)
-            velocity = relative_position.velocity.km_per_s  # Geschwindigkeit in km/s
-            relative_velocity = velocity[2]  # Sichtliniengeschwindigkeit
+            satellite_position = satellite.at(t)
+            observer_position = station.at(t)
+            relative_position = satellite_position - observer_position
 
-            # Doppler-Korrektur
-            corrected_freq = round(doppler_shift(uplink_freq, relative_velocity))
+            relative_velocity = relative_position.velocity.km_per_s
+
+            radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
+
+            #print(f"Radialgeschwindigkeit von {satellite.name}: {radial_velocity:.3f} km/s")
+
+            #print(f"Doppler: {round(doppler_shift(downlink_freq, radial_velocity))}")
 
             # Frequenz setzen
-            if myrig.set_freq(Hamlib.RIG_VFO_CURR, corrected_freq) != 0:
-                print(f"Frequenz angepasst auf: {corrected_freq} Hz")
+            if myrig.set_freq(Hamlib.RIG_VFO_CURR, round(doppler_shift(downlink_freq, radial_velocity))) != 0:
+                print(f"Frequenz angepasst auf: {round(doppler_shift(downlink_freq, radial_velocity))} Hz")
             else:
                 print(f"Error: {Hamlib.rigerror(myrig.error_status)}")
 
