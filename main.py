@@ -1,38 +1,38 @@
 import time
-from skyfield.api import load, EarthSatellite
+from skyfield.api import load, Topos
 from skyfield.toposlib import wgs84
 from datetime import datetime
 import Hamlib
 
-# Get TLE from online source
+# Lade TLEs von Celestrak
 
 url ="https://celestrak.org/NORAD/elements/amateur.txt"
 satellites = load.tle_file(url)
-print(f"TLE Daten von {url} geladen.")
+print(f"TLE Daten von {url} geladen.\n")
 
-satellite = {sat.name: sat for sat in satellites}["DIWATA-2B"]
+satellite = {sat.name: sat for sat in satellites}["RADFXSAT (FOX-1B)"]
 
 # My station details
-station = wgs84.latlon(47.165101053547325, 8.295939429046944, elevation_m=495)
-
-# Calculate Doppler
-
-LIGHT_SPEED = 299792.458 # km/s
+station = Topos(latitude_degrees=47.165101053547325, longitude_degrees=8.295939429046944, elevation_m=495)
 
 def doppler_shift(freq, rad_vel):
-    return freq * (1 - (rad_vel / LIGHT_SPEED))
+    return freq * (1 - (rad_vel / 299792.458))
 
 # Rig Setup
-
 Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
 myrig = Hamlib.Rig(rig_model=3085)
 myrig.set_conf("rig_pathname","/dev/tty.usbmodem142201")
 myrig.set_conf("retry","5")
-downlink_freq = 145900000
-update_interval = 1
+
+update_interval = 5
 
 if myrig.open() != 0:
-    print(f"Verbindung zu {myrig.caps.mfg_name} {myrig.caps.model_name} hergestellt.")
+
+    # Feststellen, dass die Verbindung funktioniert
+    print(f"Verbindung zu {myrig.caps.mfg_name} {myrig.caps.model_name} hergestellt.\n")
+
+    #Abfragen der aktuellen Frequenz
+    current_vfo_freq = myrig.get_freq(Hamlib.RIG_VFO_A)
 
     try:
         while True:
@@ -40,30 +40,38 @@ if myrig.open() != 0:
             ts = load.timescale()
             t = ts.now()
 
+            # Ausrechnen ob Sat schon über
+            # dem Horizont ist oder nicht
+            difference = satellite - station
+            topocentric = difference.at(t)
+            alt, az, distance = topocentric.altaz()
+
+            # Relative Geschwindigkeit und
+            # Radialgeschwindigkeit ausrechnen
             satellite_position = satellite.at(t)
             observer_position = station.at(t)
             relative_position = satellite_position - observer_position
-
             relative_velocity = relative_position.velocity.km_per_s
-
             radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
-            #print(f"Radialgeschwindigkeit von {satellite.name}: {radial_velocity:.3f} km/s")
-
-            #print(f"Doppler: {round(doppler_shift(downlink_freq, radial_velocity))}")
-
-            # Frequenz setzen
-            if myrig.set_freq(Hamlib.RIG_VFO_CURR, round(doppler_shift(downlink_freq, radial_velocity))) != 0:
-                print(f"Frequenz angepasst auf: {round(doppler_shift(downlink_freq, radial_velocity))} Hz")
+            if myrig.set_freq(Hamlib.RIG_VFO_CURR, round(doppler_shift(current_vfo_freq, radial_velocity))) != 0:
+                print(f"Satellite:\t{satellite.name}")
+                print(f"Frequency:\t{round(doppler_shift(current_vfo_freq, radial_velocity) / 1000000,6)} MHz")
+                print(f"Elevation:\t{round(alt.degrees)}°")
+                print(f"Distance:\t{round(distance.km)} km")
+                print(f"Azimut:\t\t{round(az.degrees)}°")
+                print("")
             else:
                 print(f"Error: {Hamlib.rigerror(myrig.error_status)}")
-
+                
             # Wartezeit vor der nächsten Aktualisierung
             time.sleep(update_interval)
 
     except KeyboardInterrupt:
-        print("Frequenznachführung beendet.")
-
+        if myrig.set_freq(Hamlib.RIG_VFO_CURR, current_vfo_freq) != 0:
+            print(f"Frequenz wurde auf {round(current_vfo_freq)} Hz zurückgesetzt.")
+        else:
+            print(f"Error: {Hamlib.rigerror(myrig.error_status)}")
 else:
     print("Verbindung fehlgeschlagen")
     exit(1)
