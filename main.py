@@ -3,14 +3,26 @@ from skyfield.api import load, Topos
 from skyfield.toposlib import wgs84
 from datetime import datetime
 import Hamlib
+import os
+import requests
 
 # Lade TLEs von Celestrak
 
-url ="https://celestrak.org/NORAD/elements/amateur.txt"
-satellites = load.tle_file(url)
-print(f"TLE Daten von {url} geladen.\n")
+TLE_url = "https://celestrak.org/NORAD/elements/amateur.txt"
 
-satellite = {sat.name: sat for sat in satellites}["RADFXSAT (FOX-1B)"]
+response = requests.get(TLE_url)
+file_name = "tle.txt"
+
+if response.status_code == 200:
+    with open(file_name, "wb") as file:
+        file.write(response.content)
+    print(f"TLEs von {TLE_url} geladen & gespeichert.")
+else:
+    print(f"TLEs konnten nicht von {TLE_url} geladen werden.")
+
+satellites = load.tle_file(file_name)
+
+satellite = {sat.name: sat for sat in satellites}["ISS (ZARYA)"]
 
 # My station details
 station = Topos(latitude_degrees=47.165101053547325, longitude_degrees=8.295939429046944, elevation_m=495)
@@ -24,7 +36,7 @@ myrig = Hamlib.Rig(rig_model=3085)
 myrig.set_conf("rig_pathname","/dev/tty.usbmodem142201")
 myrig.set_conf("retry","5")
 
-update_interval = 5
+update_interval = 1
 
 if myrig.open() != 0:
 
@@ -36,7 +48,7 @@ if myrig.open() != 0:
 
     try:
         while True:
-            
+            # Aktuelle Zeit berechnen
             ts = load.timescale()
             t = ts.now()
 
@@ -55,11 +67,12 @@ if myrig.open() != 0:
             radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
             if myrig.set_freq(Hamlib.RIG_VFO_CURR, round(doppler_shift(current_vfo_freq, radial_velocity))) != 0:
+                os.system("clear")
                 print(f"Satellite:\t{satellite.name}")
                 print(f"Frequency:\t{round(doppler_shift(current_vfo_freq, radial_velocity) / 1000000,6)} MHz")
                 print(f"Elevation:\t{round(alt.degrees)}°")
-                print(f"Distance:\t{round(distance.km)} km")
                 print(f"Azimut:\t\t{round(az.degrees)}°")
+                print(f"Distance:\t{round(distance.km)} km")
                 print("")
             else:
                 print(f"Error: {Hamlib.rigerror(myrig.error_status)}")
