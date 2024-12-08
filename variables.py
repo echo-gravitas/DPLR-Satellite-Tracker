@@ -1,1 +1,0 @@
-available_radios = {"Icom IC-705":3085,"Icom IC-7300":3073,"Icom IC-7760":3092}
