@@ -1,20 +1,31 @@
 import os
-import requests
-from datetime import datetime, timedelta
-import Hamlib
-import time
-from skyfield.api import load, Topos
 import threading
-from queue import Queue
+from datetime import datetime, timedelta
+import time
+import requests
+import Hamlib
+from skyfield.api import load, Topos
 import streamlit as sl
+
+sl.set_page_config(
+    page_title="DPLR Sat Tracker",
+    page_icon="🤓",
+    layout="centered",
+    initial_sidebar_state="auto"
+)
 
 TLE_URL                 =       "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle"
 TLE_FILENAME            =       "tle.txt"
 SATELLITE_NAMES         =       ""
-station                 =       Topos(latitude_degrees=47.165101053547325, longitude_degrees=8.295939429046944, elevation_m=495)
 satellites              =       load.tle_file(TLE_FILENAME)
+station                 =       Topos(
+    latitude_degrees=47.165101053547325,
+    longitude_degrees=8.295939429046944,
+    elevation_m=495
+    )
 
 def doppler_shift(freq, rad_vel):
+    """Calculates doppler frquency shift"""
     return freq * (1 - (rad_vel / 299792.458))
 
 def load_local_tle(file_path):
@@ -63,47 +74,93 @@ available_rig_ids       =       {"Icom IC-705":3085,"Icom IC-7300":3073,"Icom IC
 
 # Sidebar Content
 
-sl.sidebar.title("Sat Tracker")
+with sl.sidebar:
 
-sl.sidebar.caption("Track satellites frequencies with ease. Doppler effect correction? Sat Tracker will do it for you.")
+    sl.title("DPLR Sat Tracker")
+    sl.caption("Track satellites frequencies with ease. Doppler effect correction? Sat Tracker will do it for you.")
 
-selected_sat = sl.sidebar.selectbox("Select Satellite", SATELLITE_NAMES)
+    selected_sat = sl.selectbox("Select Satellite", SATELLITE_NAMES)
 
-satellite = {sat.name: sat for sat in satellites}[selected_sat]
+    satellite = {sat.name: sat for sat in satellites}[selected_sat]
 
-sl.sidebar.subheader("Radio Config",divider=True)
+    sl.subheader("Radio Config",divider=True)
 
-selected_device = sl.sidebar.selectbox("Select Device", list_devices("tty.usb"))
+    col1,col2 = sl.columns(2)
+    with col1:
+        selected_device = sl.selectbox("Select Device", list_devices("tty.usb"))
+    with col2:
+        selected_rig_key = sl.selectbox("Select Rig", options=list(available_rig_ids.keys()))
+        selected_rig_id = available_rig_ids[selected_rig_key]
 
-selected_rig_key = sl.sidebar.selectbox("Select Rig", options=list(available_rig_ids.keys()))
-selected_rig_id = available_rig_ids[selected_rig_key]
+    col1,col2 = sl.columns(2)
+    with col1:
+        selected_vfo = sl.selectbox("Select VFO", options=["VFO A", "VFO B", "Current"])
 
-selected_vfo = sl.sidebar.selectbox("Select VFO", options={"VFO A", "VFO B", "Current VFO"})
+        if selected_vfo == "VFO A":
+            vfo = Hamlib.RIG_VFO_A
+        elif selected_vfo == "VFO B":
+            vfo = Hamlib.RIG_VFO_B
+        elif selected_vfo == "Current VFO":
+            vfo = Hamlib.RIG_VFO_CURR
+        else:
+            vfo = Hamlib.RIG_VFO_CURR
 
-if selected_vfo == "VFO A":
-    vfo = Hamlib.RIG_VFO_A
-elif selected_vfo == "VFO B":
-    vfo = Hamlib.RIG_VFO_B
-elif selected_vfo == "Current VFO":
-    vfo = Hamlib.RIG_VFO_CURR
+    with col2:
+        selected_mode = sl.selectbox("Select Mode", options=["USB","LSB","FM","CW"])
 
-selected_freq = sl.sidebar.number_input("Center Frequency (Hz)", min_value=144000000,max_value=440000000, value=437800000)
+        if selected_mode == "USB":
+            mode = Hamlib.RIG_MODE_USB
+        elif selected_mode == "LSB":
+            mode = Hamlib.RIG_MODE_LSB
+        elif selected_mode == "FM":
+            mode = Hamlib.RIG_MODE_FMN
+        elif selected_mode == "CW":
+            mode = Hamlib.RIG_MODE_CW
+        else:
+            mode = Hamlib.RIG_MODE_USB
 
-sl.sidebar.subheader("Tracking Settings", divider=True)
+    selected_freq = sl.number_input(
+        "Center Frequency (Hz)",
+        min_value=144000000,
+        max_value=440000000,
+        value=437800000
+    )
 
-selected_interval = sl.sidebar.select_slider("Update Interval (s)", options=[0.1,0.5,1,3,5,10], value=1)
+    sl.subheader("Tracking Settings", divider=True)
+
+    selected_interval = sl.select_slider(
+        "Update Interval (s)",
+        options=[0.1,0.5,1,3,5,10],
+        value=0.1
+    )
 
 Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
 rig = Hamlib.Rig(rig_model=selected_rig_id)
 rig.set_conf("rig_pathname", f"/dev/{selected_device}")
 
+sl.title(f"Tracking {selected_sat}")
+
+debug = f'''
+    Device:\t\t{selected_device}
+    Rid ID:\t\t{selected_rig_id}
+    Rig Name:\t{selected_rig_key}
+    Current QRG:\t{selected_freq / 1000000:.6f} MHz
+    Satellite:\t{selected_sat}
+    Interval:\t{selected_interval} s
+    TLE date:\t{modification_date.strftime("%A, %d. %B %Y %H:%M:%S")}
+    VFO:\t\t{selected_vfo}
+    Mode:\t\t{selected_mode}
+'''
+sl.code(debug, language=None)
+
+rig.open()
+
 def sat_tracking():
+    """Tracks Satellite and calculates freq shift for doppler effect"""
 
-    rig.open()
-    
-    count = 0
+    output_placeholder = sl.empty()
 
-    while count < 10:
+    while True:
 
         # Aktuelle Zeit berechnen
         ts = load.timescale()
@@ -124,38 +181,39 @@ def sat_tracking():
         radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
         rig.set_vfo(vfo)
+        rig.set_mode(mode)
 
-        if rig.set_freq(vfo, round(doppler_shift(selected_freq, radial_velocity))) != 0:
-            print(f"Satellite:\t{satellite.name}")
-            print(f"Frequency:\t{round(doppler_shift(selected_freq, radial_velocity) / 1000000,6)} MHz")
-            print(f"Elevation:\t{round(alt.degrees)}°")
-            print(f"Azimut:\t\t{round(az.degrees)}°")
-            print(f"Distance:\t{round(distance.km)} km")
-            print("")
-        else:
-            print(f"Error: {Hamlib.rigerror(rig.error_status)}")
+        rig.set_freq(vfo, round(doppler_shift(selected_freq, radial_velocity)))
+      
+        output = f'''
+            Satellite:\t{satellite.name}
+            Frequency:\t{round(doppler_shift(selected_freq, radial_velocity) / 1000000,6)} MHz
+            Elevation:\t{round(alt.degrees)}°
+            Azimuth:\t{round(az.degrees)}°
+            Distance:\t{round(distance.km)} km
+        '''
         
-        count += 1
-            
+        output_placeholder.code(output, language=None)
+
         # Wartezeit vor der nächsten Aktualisierung
         time.sleep(selected_interval)
 
+def disconnect_rig():
+    """Disconnect from rig and reset frequency"""
     rig.set_vfo(vfo)
     rig.set_freq(vfo, selected_freq)
+    rig.close()
 
-sl.sidebar.button("Start Tracking", use_container_width=True, on_click=sat_tracking, type="primary")
+def set_split():
+    rig.set_split_mode(Hamlib.RIG_SPLIT_ON)
+    rig.set_split_freq(Hamlib.RIG_VFO_OTHER, 145500000)
 
-sl.title(f"Tracking {selected_sat}")
 
-debug = f'''
-    Device:\t\t\t{selected_device}
-    Rid ID:\t\t\t{selected_rig_id}
-    Rig key:\t\t{selected_rig_key}
-    Current freq:\t\t{selected_freq}
-    Sat:\t\t\t{selected_sat}
-    Interval:\t\t{selected_interval}
-    TLE file date:\t\t{modification_date}
-    Selected VFO:\t\t{selected_vfo}
-'''
+if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary"):
+    sat_tracking()
 
-sl.code(debug, language=None)
+if sl.sidebar.button("Stop Tracking", use_container_width=True, type="secondary"):
+    disconnect_rig()
+
+if sl.sidebar.button("Set Split Mode", use_container_width=True, type="secondary"):
+    set_split()
