@@ -1,12 +1,11 @@
-import time
-from skyfield.api import load, Topos
-from skyfield.toposlib import wgs84
-from datetime import datetime
-import Hamlib
 import os
+import time
 import requests
+from skyfield.api import load, Topos
+import Hamlib
 
 # Lade TLEs von Celestrak
+
 
 TLE_url = "https://celestrak.org/NORAD/elements/amateur.txt"
 
@@ -37,6 +36,7 @@ myrig.set_conf("rig_pathname","/dev/tty.usbmodem142201")
 myrig.set_conf("retry","5")
 
 update_interval = 1
+
 
 if myrig.open() != 0:
 
@@ -88,7 +88,6 @@ if myrig.open() != 0:
 else:
     print("Verbindung fehlgeschlagen")
     exit(1)
-    
 
 # myrig.set_vfo(Hamlib.RIG_VFO_B)
 # myrig.set_freq(Hamlib.RIG_VFO_B, 134625000)

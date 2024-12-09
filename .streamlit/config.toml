@@ -1,0 +1,8 @@
+[theme]
+base="dark"
+primaryColor="#2c86a2"
+font="sans serif"
+
+[server]
+headless = true
+runOnSave = true
