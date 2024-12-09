@@ -1,9 +1,7 @@
 import os
 import time
 import requests
-from datetime import datetime
 from skyfield.api import load, Topos
-from skyfield.toposlib import wgs84
 import Hamlib
 
 # Lade TLEs von Celestrak
