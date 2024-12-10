@@ -17,7 +17,6 @@ sl.set_page_config(
 TLE_URL                 =       "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle"
 TLE_FILENAME            =       "tle.txt"
 SATELLITE_NAMES         =       ""
-satellites              =       load.tle_file(TLE_FILENAME)
 station                 =       Topos(
     latitude_degrees=47.165101053547325,
     longitude_degrees=8.295939429046944,
@@ -57,6 +56,8 @@ else:
         with open(TLE_FILENAME, "wb") as file:
             file.write(response.content)
         SATELLITE_NAMES = load_local_tle(TLE_FILENAME)
+
+satellites = load.tle_file(TLE_FILENAME)
 
 
 def list_devices(filter_pattern=None):
@@ -118,13 +119,23 @@ with sl.sidebar:
             mode = Hamlib.RIG_MODE_CW
         else:
             mode = Hamlib.RIG_MODE_USB
-
-    selected_freq = sl.number_input(
-        "Center Frequency (Hz)",
-        min_value=144000000,
-        max_value=440000000,
-        value=437800000
-    )
+    
+    col1,col2 = sl.columns(2)
+    with col1:
+        selected_freq = sl.number_input(
+            "Center Frequency (Hz)",
+            min_value=144000000,
+            max_value=440000000,
+            value=437800000
+        )
+    
+    with col2:
+        selected_passband = sl.number_input(
+            "Passband Width",
+            min_value=500,
+            max_value=3600,
+            value=2700
+        )
 
     sl.subheader("Tracking Settings", divider=True)
 
@@ -150,6 +161,7 @@ debug = f'''
     TLE date:\t{modification_date.strftime("%A, %d. %B %Y %H:%M:%S")}
     VFO:\t\t{selected_vfo}
     Mode:\t\t{selected_mode}
+    Passband:\t{selected_passband} Hz
 '''
 sl.code(debug, language=None)
 
@@ -181,7 +193,7 @@ def sat_tracking():
         radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
         rig.set_vfo(vfo)
-        rig.set_mode(mode)
+        rig.set_mode(mode, selected_passband)
 
         rig.set_freq(vfo, round(doppler_shift(selected_freq, radial_velocity)))
       
@@ -205,6 +217,7 @@ def disconnect_rig():
     rig.close()
 
 def set_split():
+    """Set split mode"""
     rig.set_split_mode(Hamlib.RIG_SPLIT_ON)
     rig.set_split_freq(Hamlib.RIG_VFO_OTHER, 145500000)
 
