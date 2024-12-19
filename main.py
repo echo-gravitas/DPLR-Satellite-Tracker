@@ -1,5 +1,5 @@
+'''DPLR Sat Tracking'''
 import os
-import threading
 from datetime import datetime, timedelta
 import time
 import requests
@@ -14,14 +14,17 @@ sl.set_page_config(
     initial_sidebar_state="auto"
 )
 
+station_lat             =       None
+station_lng             =       None
+station_elevation       =       None
 TLE_URL                 =       "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle"
 TLE_FILENAME            =       "tle.txt"
 SATELLITE_NAMES         =       ""
 modification_date       =       datetime.now()
 station                 =       Topos(
-    latitude_degrees=47.165101053547325,
-    longitude_degrees=8.295939429046944,
-    elevation_m=495
+    latitude_degrees=station_lat or 47.165101053547325,
+    longitude_degrees=station_lng or 8.295939429046944,
+    elevation_m=station_elevation or 495
     )
 
 def doppler_shift(freq, rad_vel):
@@ -82,6 +85,19 @@ with sl.sidebar:
     selected_sat = sl.selectbox("Select Satellite", SATELLITE_NAMES)
 
     satellite = {sat.name: sat for sat in satellites}[selected_sat]
+
+    sl.subheader("Station Config",divider=True)
+
+    col1,col2,col3 = sl.columns(3)
+
+    with col1:
+        station_lng = sl.text_input("QTH lng", value=47.165101053547325)
+
+    with col2: 
+        station_lat = sl.text_input("QTH lat", value=8.295939429046944)
+
+    with col3:
+        station_elevation = sl.text_input("Elevation (m)", value=495)
 
     sl.subheader("Radio Config",divider=True)
 
@@ -164,6 +180,9 @@ debug = f'''
     VFO:\t\t{selected_vfo}
     Mode:\t\t{selected_mode}
     Passband:\t{selected_passband} Hz
+    Latitude:\t{station_lat}°
+    Longitude:\t{station_lng}°
+    Elevation:\t{station_elevation} m
 '''
 sl.code(debug, language=None)
 
