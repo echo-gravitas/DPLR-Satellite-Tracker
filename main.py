@@ -1,11 +1,12 @@
+'''DPLR Sat Tracking'''
 import os
-import threading
 from datetime import datetime, timedelta
-import time
 import requests
 import Hamlib
-from skyfield.api import load, Topos
+from skyfield.api import load,  Topos
 import streamlit as sl
+import time
+from functions import *
 
 sl.set_page_config(
     page_title="DPLR Sat Tracker",
@@ -14,45 +15,39 @@ sl.set_page_config(
     initial_sidebar_state="auto"
 )
 
-TLE_URL                 =       "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle"
-TLE_FILENAME            =       "tle.txt"
-SATELLITE_NAMES         =       ""
-modification_date       =       datetime.now()
-station                 =       Topos(
-    latitude_degrees=47.165101053547325,
-    longitude_degrees=8.295939429046944,
-    elevation_m=495
+VFOS= ["VFO A", "VFO B", "Current"]
+MODES = ["USB","LSB","FM","CW"]
+STATION_LAT = None
+STATION_LNG = None
+STATION_ELEV = None
+TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle"
+TLE_FILENAME = "tle.txt"
+SATELLITE_NAMES = None
+MOD_DATE = datetime.now()
+station = Topos(
+    latitude_degrees=STATION_LAT or 47.165161521226466,
+    longitude_degrees=STATION_LNG or 8.295906232497849,
+    elevation_m=STATION_ELEV or 495
     )
-
-def doppler_shift(freq, rad_vel):
-    """Calculates doppler frquency shift"""
-    return freq * (1 - (rad_vel / 299792.458))
-
-def load_local_tle(file_path):
-    """Load and read TLEs from local file"""
-    with open(file_path, "r", encoding="utf-8") as file:
-        lines = file.readlines()
-    names = [lines[i].strip() for i in range(0, len(lines), 3)]
-    return names
 
 # Check TLE file and load from remote if neccessary
 
 if os.path.exists(TLE_FILENAME):
-    SATELLITE_NAMES     =   load_local_tle(TLE_FILENAME)
-    modification_time   =   os.path.getmtime(TLE_FILENAME)
-    modification_date   =   datetime.fromtimestamp(modification_time)
-    now                 =   datetime.now()
-    file_age            =   now - modification_date
+    SATELLITE_NAMES = load_local_tle(TLE_FILENAME)
+    modification_time = os.path.getmtime(TLE_FILENAME)
+    MOD_DATE = datetime.fromtimestamp(modification_time)
+    now = datetime.now()
+    file_age = now - MOD_DATE
 
     if file_age > timedelta(hours=2):
-        response        =   requests.get(TLE_URL, timeout=30)
+        response = requests.get(TLE_URL, timeout=30)
 
         if response.status_code == 200:
             with open(TLE_FILENAME, "wb") as file:
                 file.write(response.content)
 
 else:
-    response        =   requests.get(TLE_URL)
+    response = requests.get(TLE_URL)
     if response.status_code == 200:
         with open(TLE_FILENAME, "wb") as file:
             file.write(response.content)
@@ -61,16 +56,10 @@ else:
 satellites = load.tle_file(TLE_FILENAME)
 
 
-def list_devices(filter_pattern=None):
-    """Read connected devices from OS, filter and list them"""
-    dev_path = "/dev/"
-    devices = os.listdir(dev_path)
-    if filter_pattern:
-        devices = [device for device in devices if filter_pattern in device]
-    return devices
 
-os_available_devices    =       list_devices("tty.usb")
-available_rig_ids       =       {"Icom IC-705":3085,"Icom IC-7300":3073,"Icom IC-7760":3092}
+
+os_available_devices = list_devices("tty.usb")
+available_rig_ids = {"Icom IC-705":3085,"Icom IC-7300":3073,"Icom IC-7760":3092}
 
 # Sidebar Content
 
@@ -83,54 +72,80 @@ with sl.sidebar:
 
     satellite = {sat.name: sat for sat in satellites}[selected_sat]
 
-    sl.subheader("Radio Config",divider=True)
+    sl.subheader("Station Config",divider=True)
+
+    col1,col2,col3 = sl.columns(3)
+
+    with col1:
+        STATION_LNG = sl.text_input("QTH Lng", value=47.165101053547325)
+
+    with col2: 
+        STATION_LAT = sl.text_input("QTH Lat", value=8.295939429046944)
+
+    with col3:
+        STATION_ELEV = sl.text_input("Elevation (m)", value=495)
+
+    sl.subheader("Device Settings", divider=True)
 
     col1,col2 = sl.columns(2)
+
     with col1:
         selected_device = sl.selectbox("Select Device", list_devices("tty.usb"))
     with col2:
         selected_rig_key = sl.selectbox("Select Rig", options=list(available_rig_ids.keys()))
         selected_rig_id = available_rig_ids[selected_rig_key]
 
-    col1,col2 = sl.columns(2)
-    with col1:
-        selected_vfo = sl.selectbox("Select VFO", options=["VFO A", "VFO B", "Current"])
+    sl.subheader("RCV VFO Settings",divider=True)
 
-        if selected_vfo == "VFO A":
-            vfo = Hamlib.RIG_VFO_A
-        elif selected_vfo == "VFO B":
-            vfo = Hamlib.RIG_VFO_B
-        elif selected_vfo == "Current VFO":
-            vfo = Hamlib.RIG_VFO_CURR
-        else:
-            vfo = Hamlib.RIG_VFO_CURR
+    col1,col2 = sl.columns(2)
+
+    with col1:
+        sel_rcv_vfo = get_vfo(sl.selectbox("Select VFO", options=["VFO A", "VFO B", "Current"]))
 
     with col2:
-        selected_mode = sl.selectbox("Select Mode", options=["USB","LSB","FM","CW"])
+        sel_rcv_mode = get_mode(sl.selectbox("Select Mode", options=["USB","LSB","FM","CW"]))
 
-        if selected_mode == "USB":
-            mode = Hamlib.RIG_MODE_USB
-        elif selected_mode == "LSB":
-            mode = Hamlib.RIG_MODE_LSB
-        elif selected_mode == "FM":
-            mode = Hamlib.RIG_MODE_FMN
-        elif selected_mode == "CW":
-            mode = Hamlib.RIG_MODE_CW
-        else:
-            mode = Hamlib.RIG_MODE_USB
-    
     col1,col2 = sl.columns(2)
+    
     with col1:
-        selected_freq = sl.number_input(
-            "Center Frequency (Hz)",
+        sel_rcv_freq = sl.number_input(
+            "RCV Center Frequency (Hz)",
             min_value=144000000,
             max_value=440000000,
             value=437800000
         )
     
     with col2:
-        selected_passband = sl.number_input(
-            "Passband Width",
+        sel_rcv_passband = sl.number_input(
+            "RCV Passband Width",
+            min_value=500,
+            max_value=3600,
+            value=2700
+        )
+
+    sl.subheader("SND VFO Settings",divider=True)
+
+    col1,col2 = sl.columns(2)
+
+    with col1:
+        sel_snd_vfo = get_vfo(sl.selectbox("Select SND VFO", options=VFOS, index=0))
+
+    with col2:
+        sel_snd_mode = get_mode(sl.selectbox("Select SND Mode", options=MODES, index=2))
+    
+    col1,col2 = sl.columns(2)
+    
+    with col1:
+        sel_snd_freq = sl.number_input(
+            "SND Center Frequency (Hz)",
+            min_value=144000000,
+            max_value=440000000,
+            value=437800000
+        )
+    
+    with col2:
+        sel_snd_passband = sl.number_input(
+            "SND Passband Width",
             min_value=500,
             max_value=3600,
             value=2700
@@ -138,17 +153,25 @@ with sl.sidebar:
 
     sl.subheader("Tracking Settings", divider=True)
 
-    selected_interval = sl.select_slider(
-        "Update Interval (s)",
-        options=[0.1,0.5,1,3,5,10],
-        value=0.1
-    )
+    col1,col2 = sl.columns(2)
+
+    with col1:
+    
+        selected_interval = sl.select_slider(
+            "Update Interval (s)",
+            options=[0.1,0.5,1,3,5,10],
+            value=1
+        )
+
+    with col2:
+
+        listen_only = sl.checkbox("RCV only")
 
 Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
 rig = Hamlib.Rig(rig_model=selected_rig_id)
 rig.set_conf("rig_pathname", f"/dev/{selected_device}")
 
-if selected_device != None:
+if selected_device is not None:
     rig.open()
 
 sl.title(f"Tracking {selected_sat}")
@@ -157,13 +180,16 @@ debug = f'''
     Device:\t\t{selected_device}
     Rid ID:\t\t{selected_rig_id}
     Rig Name:\t{selected_rig_key}
-    Current QRG:\t{selected_freq / 1000000:.6f} MHz
+    Current QRG:\t{sel_rcv_freq / 1000000:.6f} MHz
     Satellite:\t{selected_sat}
     Interval:\t{selected_interval} s
-    TLE date:\t{modification_date.strftime("%A, %d. %B %Y %H:%M:%S")}
-    VFO:\t\t{selected_vfo}
-    Mode:\t\t{selected_mode}
-    Passband:\t{selected_passband} Hz
+    TLE date:\t{MOD_DATE.strftime("%A, %d. %B %Y %H:%M:%S")}
+    VFO:\t\t{sel_rcv_vfo}
+    Mode:\t\t{sel_rcv_mode}
+    Passband:\t{sel_rcv_passband} Hz
+    Latitude:\t{STATION_LAT}°
+    Longitude:\t{STATION_LNG}°
+    Elevation:\t{STATION_ELEV} m
 '''
 sl.code(debug, language=None)
 
@@ -192,14 +218,17 @@ def sat_tracking():
         relative_velocity = relative_position.velocity.km_per_s
         radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
-        rig.set_vfo(vfo)
-        rig.set_mode(mode, selected_passband)
+        rig.set_vfo(sel_rcv_vfo)
+        rig.set_mode(sel_rcv_mode, sel_rcv_passband)
+        rig.set_freq(sel_rcv_vfo, round(doppler_shift(sel_rcv_freq, radial_velocity)))
 
-        rig.set_freq(vfo, round(doppler_shift(selected_freq, radial_velocity)))
+        if not listen_only:
+            rig.set_mode(sel_snd_mode, sel_snd_passband)
+            rig.set_freq(sel_snd_vfo, round(doppler_shift(sel_snd_freq, radial_velocity)))
       
         output = f'''
             Satellite:\t{satellite.name}
-            Frequency:\t{round(doppler_shift(selected_freq, radial_velocity) / 1000000,6)} MHz
+            Frequency:\t{round(doppler_shift(sel_rcv_freq, radial_velocity) / 1000000,6)} MHz
             Elevation:\t{round(alt.degrees)}°
             Azimuth:\t{round(az.degrees)}°
             Distance:\t{round(distance.km)} km
@@ -212,14 +241,14 @@ def sat_tracking():
 
 def disconnect_rig():
     """Disconnect from rig and reset frequency"""
-    rig.set_vfo(vfo)
-    rig.set_freq(vfo, selected_freq)
+    rig.set_vfo(sel_rcv_vfo)
+    rig.set_freq(sel_rcv_vfo, sel_rcv_freq)
     rig.close()
 
 def set_split():
     """Set split mode"""
     rig.set_split_mode(Hamlib.RIG_SPLIT_ON)
-    rig.set_split_freq(Hamlib.RIG_VFO_OTHER, 145500000)
+    rig.set_split_freq(Hamlib.RIG_VFO_OTHER, 144444444)
 
 
 if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary", disabled=selected_device is None):
