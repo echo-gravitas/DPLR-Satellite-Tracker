@@ -33,21 +33,21 @@ station = Topos(
 # Check TLE file and load from remote if neccessary
 
 if os.path.exists(TLE_FILENAME):
-    SATELLITE_NAMES     =   load_local_tle(TLE_FILENAME)
-    modification_time   =   os.path.getmtime(TLE_FILENAME)
-    MOD_DATE   =   datetime.fromtimestamp(modification_time)
-    now                 =   datetime.now()
-    file_age            =   now - MOD_DATE
+    SATELLITE_NAMES = load_local_tle(TLE_FILENAME)
+    modification_time = os.path.getmtime(TLE_FILENAME)
+    MOD_DATE = datetime.fromtimestamp(modification_time)
+    now = datetime.now()
+    file_age = now - MOD_DATE
 
     if file_age > timedelta(hours=2):
-        response        =   requests.get(TLE_URL, timeout=30)
+        response = requests.get(TLE_URL, timeout=30)
 
         if response.status_code == 200:
             with open(TLE_FILENAME, "wb") as file:
                 file.write(response.content)
 
 else:
-    response        =   requests.get(TLE_URL)
+    response = requests.get(TLE_URL)
     if response.status_code == 200:
         with open(TLE_FILENAME, "wb") as file:
             file.write(response.content)
@@ -58,8 +58,8 @@ satellites = load.tle_file(TLE_FILENAME)
 
 
 
-os_available_devices    =       list_devices("tty.usb")
-available_rig_ids       =       {"Icom IC-705":3085,"Icom IC-7300":3073,"Icom IC-7760":3092}
+os_available_devices = list_devices("tty.usb")
+available_rig_ids = {"Icom IC-705":3085,"Icom IC-7300":3073,"Icom IC-7760":3092}
 
 # Sidebar Content
 
@@ -100,11 +100,11 @@ with sl.sidebar:
     col1,col2 = sl.columns(2)
 
     with col1:
-        sel_rcv_vfo = sl.selectbox("Select RCV VFO", options=VFOS, index=0)
+        sel_rcv_vfo = get_vfo(sl.selectbox("Select VFO", options=["VFO A", "VFO B", "Current"]))
 
     with col2:
-        sel_rcv_mode = sl.selectbox("Select RCV Mode", options=MODES, index=2)
-    
+        sel_rcv_mode = get_mode(sl.selectbox("Select Mode", options=["USB","LSB","FM","CW"]))
+
     col1,col2 = sl.columns(2)
     
     with col1:
@@ -128,10 +128,10 @@ with sl.sidebar:
     col1,col2 = sl.columns(2)
 
     with col1:
-        sel_snd_vfo = vfo(sl.selectbox("Select SND VFO", options=VFOS, index=0))
+        sel_snd_vfo = get_vfo(sl.selectbox("Select SND VFO", options=VFOS, index=0))
 
     with col2:
-        sel_snd_mode = mode(sl.selectbox("Select SND Mode", options=MODES, index=2))
+        sel_snd_mode = get_mode(sl.selectbox("Select SND Mode", options=MODES, index=2))
     
     col1,col2 = sl.columns(2)
     
@@ -153,11 +153,19 @@ with sl.sidebar:
 
     sl.subheader("Tracking Settings", divider=True)
 
-    selected_interval = sl.select_slider(
-        "Update Interval (s)",
-        options=[0.1,0.5,1,3,5,10],
-        value=1
-    )
+    col1,col2 = sl.columns(2)
+
+    with col1:
+    
+        selected_interval = sl.select_slider(
+            "Update Interval (s)",
+            options=[0.1,0.5,1,3,5,10],
+            value=1
+        )
+
+    with col2:
+
+        listen_only = sl.checkbox("RCV only")
 
 Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
 rig = Hamlib.Rig(rig_model=selected_rig_id)
@@ -210,10 +218,13 @@ def sat_tracking():
         relative_velocity = relative_position.velocity.km_per_s
         radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
-        rig.set_vfo(vfo(sel_rcv_vfo))
-        rig.set_mode(sel_snd_mode, sel_rcv_passband)
+        rig.set_vfo(sel_rcv_vfo)
+        rig.set_mode(sel_rcv_mode, sel_rcv_passband)
+        rig.set_freq(sel_rcv_vfo, round(doppler_shift(sel_rcv_freq, radial_velocity)))
 
-        rig.set_freq(vfo(sel_rcv_vfo), round(doppler_shift(sel_rcv_freq, radial_velocity)))
+        if not listen_only:
+            rig.set_mode(sel_snd_mode, sel_snd_passband)
+            rig.set_freq(sel_snd_vfo, round(doppler_shift(sel_snd_freq, radial_velocity)))
       
         output = f'''
             Satellite:\t{satellite.name}
@@ -230,14 +241,14 @@ def sat_tracking():
 
 def disconnect_rig():
     """Disconnect from rig and reset frequency"""
-    rig.set_vfo(vfo(sel_rcv_vfo))
-    rig.set_freq(vfo(sel_rcv_vfo), sel_rcv_freq)
+    rig.set_vfo(sel_rcv_vfo)
+    rig.set_freq(sel_rcv_vfo, sel_rcv_freq)
     rig.close()
 
 def set_split():
     """Set split mode"""
     rig.set_split_mode(Hamlib.RIG_SPLIT_ON)
-    rig.set_split_freq(Hamlib.RIG_VFO_OTHER, 145500000)
+    rig.set_split_freq(Hamlib.RIG_VFO_OTHER, 144444444)
 
 
 if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary", disabled=selected_device is None):
