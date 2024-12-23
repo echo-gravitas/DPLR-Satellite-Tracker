@@ -252,6 +252,9 @@ def sat_tracking():
         relative_velocity = relative_position.velocity.km_per_s
         radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
+        rig.set_mode(sel_rcv_mode, sel_rcv_passband)
+        rig.set_freq(sel_rcv_vfo, round(doppler_shift(sel_rcv_freq, radial_velocity)))
+
         if not listen_only:
             rig.set_mode(sel_snd_mode, sel_snd_passband)
             rig.set_freq(sel_snd_vfo, round(doppler_shift(sel_snd_freq, radial_velocity)))

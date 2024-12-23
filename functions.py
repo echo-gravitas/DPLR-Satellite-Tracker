@@ -43,6 +43,7 @@ def get_mode(mode_name):
 
 def disconnect_rig(rig, vfo, freq):
     """Disconnect from rig and reset frequency"""
+    rig.open()
     rig.set_vfo(vfo)
     rig.set_freq(vfo, freq)
     rig.close()
