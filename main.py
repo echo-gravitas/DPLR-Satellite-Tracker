@@ -1,102 +1,303 @@
+'''DPLR Sat Tracking'''
 import os
+from datetime import datetime, timedelta
 import time
 import requests
-from skyfield.api import load, Topos
 import Hamlib
+from skyfield.api import load, Topos
+import streamlit as sl
+from functions import (
+    doppler_shift,
+    load_local_tle,
+    list_devices,
+    get_vfo,
+    get_mode,
+    disconnect_rig,
+    set_snd_settings,
+    set_split,
+    set_rcv_settings,
+    )
+from settings import (
+    APP_NAME,
+    DEFAULT_LAT,
+    DEFAULT_LNG,
+    DEFAULT_ALT,
+    VFOS,
+    MODES,
+    MIN_FREQ,
+    MAX_FREQ,
+    DEFAULT_PASSBAND,
+    MIN_PASSBAND,
+    MAX_PASSBAND,
+    AVAILABLE_RIG_IDS,
+    STATION_LAT,
+    STATION_LNG,
+    STATION_ELEV,
+    TLE_FILENAME,
+    DEFAULT_RCV_FREQ,
+    DEFAULT_SND_FREQ,
+    TLE_URL
+    )
 
-# Lade TLEs von Celestrak
+sl.set_page_config(
+    page_title = APP_NAME,
+    page_icon = "📡",
+    layout = "centered",
+    initial_sidebar_state = "auto"
+)
 
+# Check TLE file and load from remote if neccessary
 
-TLE_url = "https://celestrak.org/NORAD/elements/amateur.txt"
+if os.path.exists(TLE_FILENAME):
+    SATELLITE_NAMES = load_local_tle(TLE_FILENAME)
+    modification_time = os.path.getmtime(TLE_FILENAME)
+    MOD_DATE = datetime.fromtimestamp(modification_time)
+    now = datetime.now()
+    file_age = now - MOD_DATE
 
-response = requests.get(TLE_url)
-file_name = "tle.txt"
+    if file_age > timedelta(hours=2):
+        response = requests.get(TLE_URL, timeout=30)
 
-if response.status_code == 200:
-    with open(file_name, "wb") as file:
-        file.write(response.content)
-    print(f"TLEs von {TLE_url} geladen & gespeichert.")
+        if response.status_code == 200:
+            with open(TLE_FILENAME, "wb") as file:
+                file.write(response.content)
+
 else:
-    print(f"TLEs konnten nicht von {TLE_url} geladen werden.")
+    response = requests.get(TLE_URL)
+    if response.status_code == 200:
+        with open(TLE_FILENAME, "wb") as file:
+            file.write(response.content)
+        SATELLITE_NAMES = load_local_tle(TLE_FILENAME)
 
-satellites = load.tle_file(file_name)
+satellites = load.tle_file(TLE_FILENAME)
 
-satellite = {sat.name: sat for sat in satellites}["ISS (ZARYA)"]
+os_available_devices = list_devices("tty.usb")
 
-# My station details
-station = Topos(latitude_degrees=47.165101053547325, longitude_degrees=8.295939429046944, elevation_m=495)
+# Sidebar Content
 
-def doppler_shift(freq, rad_vel):
-    return freq * (1 - (rad_vel / 299792.458))
+with sl.sidebar:
 
-# Rig Setup
+    expander = sl.expander
+
+    sl.title(APP_NAME)
+    
+    sl.caption("Track satellites frequencies with ease. Doppler effect correction? Sat Tracker will do it for you.")
+
+    selected_sat = sl.selectbox("Select Satellite", SATELLITE_NAMES)
+
+    satellite = {sat.name: sat for sat in satellites}[selected_sat]
+
+    sl.subheader("Station Config",divider=True)
+    
+    col1,col2,col3 = sl.columns(3)
+
+    with col1:
+        
+        STATION_LNG = sl.number_input("QTH Lng", value=DEFAULT_LNG, format="%0.6f", step=None)
+
+    with col2: 
+        
+        STATION_LAT = sl.number_input("QTH Lat", value=DEFAULT_LAT, format="%0.6f", step=None)
+
+    with col3:
+
+        STATION_ELEV = sl.number_input("Elevation (m)", value=DEFAULT_ALT)
+
+    sl.subheader("Device Settings", divider=True)
+
+    col1,col2 = sl.columns(2)
+
+    with col1:
+        
+        selected_device = sl.selectbox("Select Device", list_devices("tty.usb"))
+    
+    with col2:
+        
+        selected_rig_key = sl.selectbox("Select Rig", options=list(AVAILABLE_RIG_IDS.keys()))
+       
+        selected_rig_id = AVAILABLE_RIG_IDS[selected_rig_key]
+
+    with expander("Set RCV VFO Settings"):
+
+        col1,col2 = sl.columns(2)
+
+        with col1:
+            
+            sel_rcv_vfo = get_vfo(sl.selectbox("Select RCV VFO", options=VFOS, index=0))
+
+        with col2:
+            
+            sel_rcv_mode = get_mode(sl.selectbox("Select RCV Mode", options=MODES, index=3))
+
+        col1,col2 = sl.columns(2)
+
+        with col1:
+
+            sel_rcv_freq = sl.number_input(
+                "RCV Center Frequency (Hz)",
+                min_value = MIN_FREQ,
+                max_value = MAX_FREQ,
+                value=DEFAULT_RCV_FREQ
+            )
+
+        with col2:
+
+            sel_rcv_passband = sl.number_input(
+                "RCV Passband Width",
+                min_value = MIN_PASSBAND,
+                max_value = MAX_PASSBAND,
+                value=DEFAULT_PASSBAND
+            )
+
+        set_rcv_settings_btn = sl.button(
+            "Set RCV Settings",
+            use_container_width=True,
+            type="primary",
+            disabled=selected_device is None
+        )
+
+    with expander("Set SND VFO Settings"):
+        
+        col1,col2 = sl.columns(2)
+
+        with col1:
+            sel_snd_vfo = get_vfo(sl.selectbox("Select SND VFO", options=VFOS, index=1))
+
+        with col2:
+            sel_snd_mode = get_mode(sl.selectbox("Select SND Mode", options=MODES, index=3))
+        
+        col1,col2 = sl.columns(2)
+        
+        with col1:
+            sel_snd_freq = sl.number_input(
+                "SND Center Frequency (Hz)",
+                min_value = MIN_FREQ,
+                max_value = MAX_FREQ,
+                value = DEFAULT_SND_FREQ
+            )
+        
+        with col2:
+            sel_snd_passband = sl.number_input(
+                "SND Passband Width",
+                min_value=MIN_PASSBAND,
+                max_value=MAX_PASSBAND,
+                value=DEFAULT_PASSBAND
+            )
+
+        set_snd_settings_btn = sl.button(
+            "Set SND Settings",
+            use_container_width=True,
+            type="primary",
+            disabled=selected_device is None
+            )
+        
+    with expander("Tracking Settings"):
+
+        selected_interval = sl.select_slider(
+            "Update Interval (s)",
+            options=[0.1,0.5,1,3,5,10],
+            value=1
+        )
+
+        listen_only = sl.toggle("RCV only")
+
+sl.title(f"Tracking {selected_sat}")
+
+debug = f'''
+    Device:\t\t{selected_device}
+    Rid ID:\t\t{selected_rig_id}
+    Rig Name:\t{selected_rig_key}
+    Current QRG:\t{sel_rcv_freq / 1000000:.6f} MHz
+    Satellite:\t{selected_sat}
+    Interval:\t{selected_interval} s
+    TLE date:\t{MOD_DATE.strftime("%A, %d. %B %Y %H:%M:%S")}
+    Passband:\t{sel_rcv_passband} Hz
+    Latitude:\t{STATION_LAT}°
+    Longitude:\t{STATION_LNG}°
+    Elevation:\t{STATION_ELEV} m
+'''
+sl.code(debug, language=None)
+
 Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
-myrig = Hamlib.Rig(rig_model=3085)
-myrig.set_conf("rig_pathname","/dev/tty.usbmodem142201")
-myrig.set_conf("retry","5")
+rig = Hamlib.Rig(rig_model=selected_rig_id)
+rig.set_conf("rig_pathname", f"/dev/{selected_device}")
 
-update_interval = 1
+STATION = Topos(
+    latitude_degrees=STATION_LAT,
+    longitude_degrees=STATION_LNG,
+    elevation_m=STATION_ELEV
+    )
 
+def sat_tracking():
+    """Tracks Satellite and calculates freq shift for doppler effect"""
 
-if myrig.open() != 0:
+    rig.open()
 
-    # Feststellen, dass die Verbindung funktioniert
-    print(f"Verbindung zu {myrig.caps.mfg_name} {myrig.caps.model_name} hergestellt.\n")
+    output_placeholder = sl.empty()
 
-    #Abfragen der aktuellen Frequenz
-    current_vfo_freq = myrig.get_freq(Hamlib.RIG_VFO_A)
+    while True:
 
-    try:
-        while True:
-            # Aktuelle Zeit berechnen
-            ts = load.timescale()
-            t = ts.now()
+        # Aktuelle Zeit berechnen
+        ts = load.timescale()
+        t = ts.now()
 
-            # Ausrechnen ob Sat schon über
-            # dem Horizont ist oder nicht
-            difference = satellite - station
-            topocentric = difference.at(t)
-            alt, az, distance = topocentric.altaz()
+        # Ausrechnen ob Sat schon über
+        # dem Horizont ist oder nicht
+        difference = satellite - STATION
+        topocentric = difference.at(t)
+        alt, az, distance = topocentric.altaz()
 
-            # Relative Geschwindigkeit und
-            # Radialgeschwindigkeit ausrechnen
-            satellite_position = satellite.at(t)
-            observer_position = station.at(t)
-            relative_position = satellite_position - observer_position
-            relative_velocity = relative_position.velocity.km_per_s
-            radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
+        # Relative Geschwindigkeit und
+        # Radialgeschwindigkeit ausrechnen
+        satellite_position = satellite.at(t)
+        observer_position = STATION.at(t)
+        relative_position = satellite_position - observer_position
+        relative_velocity = relative_position.velocity.km_per_s
+        radial_velocity = relative_position.position.km @ relative_velocity / relative_position.distance().km
 
-            if myrig.set_freq(Hamlib.RIG_VFO_CURR, round(doppler_shift(current_vfo_freq, radial_velocity))) != 0:
-                os.system("clear")
-                print(f"Satellite:\t{satellite.name}")
-                print(f"Frequency:\t{round(doppler_shift(current_vfo_freq, radial_velocity) / 1000000,6)} MHz")
-                print(f"Elevation:\t{round(alt.degrees)}°")
-                print(f"Azimut:\t\t{round(az.degrees)}°")
-                print(f"Distance:\t{round(distance.km)} km")
-                print("")
-            else:
-                print(f"Error: {Hamlib.rigerror(myrig.error_status)}")
-                
-            # Wartezeit vor der nächsten Aktualisierung
-            time.sleep(update_interval)
+        rig.set_mode(sel_rcv_mode, sel_rcv_passband)
+        rig.set_freq(sel_rcv_vfo, round(doppler_shift(sel_rcv_freq, radial_velocity)))
 
-    except KeyboardInterrupt:
-        if myrig.set_freq(Hamlib.RIG_VFO_CURR, current_vfo_freq) != 0:
-            print(f"Frequenz wurde auf {round(current_vfo_freq)} Hz zurückgesetzt.")
-        else:
-            print(f"Error: {Hamlib.rigerror(myrig.error_status)}")
-else:
-    print("Verbindung fehlgeschlagen")
-    exit(1)
+        if not listen_only:
+            rig.set_mode(sel_snd_mode, sel_snd_passband)
+            rig.set_freq(sel_snd_vfo, round(doppler_shift(sel_snd_freq, radial_velocity)))
+      
+        output = f'''
+            Satellite:\t{satellite.name}
+            Frequency:\t{round(doppler_shift(sel_rcv_freq, radial_velocity) / 1000000,6)} MHz
+            Elevation:\t{round(alt.degrees)}°
+            Azimuth:\t{round(az.degrees)}°
+            Distance:\t{round(distance.km)} km
+        '''
+        
+        output_placeholder.code(output, language=None)
 
-# myrig.set_vfo(Hamlib.RIG_VFO_B)
-# myrig.set_freq(Hamlib.RIG_VFO_B, 134625000)
-# myrig.set_vfo(Hamlib.RIG_VFO_A)
-# #myrig.set_freq(Hamlib.RIG_VFO_A, 437800000)
-# myrig.set_mode(Hamlib.RIG_MODE_CW)
-# myrig.set_ptt(Hamlib.RIG_VFO_A, Hamlib.RIG_PTT_ON)
-# myrig.send_morse(Hamlib.RIG_VFO_A, "73 de HB3XCO")
-# myrig.set_ptt(Hamlib.RIG_VFO_A, Hamlib.RIG_PTT_OFF)
-# myrig.set_powerstat(Hamlib.RIG_POWER_ON)
+        # Wartezeit vor der nächsten Aktualisierung
+        time.sleep(selected_interval)
 
-myrig.close()
+if set_rcv_settings_btn:
+    set_rcv_settings(
+        rig,
+        sel_rcv_vfo,
+        sel_rcv_mode,
+        sel_rcv_freq,
+        sel_rcv_passband
+    )
+
+if set_snd_settings_btn:
+    set_snd_settings(
+        rig,
+        sel_snd_vfo,
+        sel_snd_mode,
+        sel_snd_freq,
+        sel_snd_passband
+    )
+   
+if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary", disabled=selected_device is None):
+    sat_tracking()
+
+if sl.sidebar.button("Stop Tracking", use_container_width=True, type="secondary", disabled=selected_device is None):
+    disconnect_rig(rig, sel_rcv_vfo, sel_rcv_freq)
+
+if sl.sidebar.button("Set Split Mode", use_container_width=True, type="secondary",disabled=selected_device is None):
+    set_split(rig, sel_snd_freq)
