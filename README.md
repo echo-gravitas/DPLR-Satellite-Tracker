@@ -1,47 +1,33 @@
-# DPLR Satellite Tracker
+# DPLR Sat Tracker
 
-DPLR Satellite Tracker is a Python-based tool designed for tracking amateur radio satellites with automatic Doppler effect corrections. It leverages modern libraries and provides an intuitive interface for radio enthusiasts to enhance satellite communication workflows.
+DPLR Sat Tracker is a Python-based project for tracking satellites and managing amateur radio communication. The application is built to automate frequency adjustments to account for the Doppler effect and provides a user-friendly interface for configuring tracking settings, radio devices, and satellite details.
 
-## Overview
+## Features
 
-This application simplifies satellite tracking and frequency management by:
+- **Real-time Satellite Tracking**: Leverages TLE (Two-Line Element) data to track satellites in real-time.
+- **Doppler Effect Correction**: Automatically adjusts transmit and receive frequencies to compensate for the Doppler shift.
+- **Device Integration**: Supports popular amateur radio rigs like the Icom IC-705 and IC-7300 using Hamlib.
+- **Interactive UI**: Provides a Streamlit-powered GUI for easy interaction and configuration.
+- **Dynamic TLE Updates**: Fetches updated TLE data from CelesTrak if the local TLE file is outdated.
+- **Customizable Settings**: Includes adjustable parameters for passband width, modes, and tracking intervals.
 
-- Automatically adjusting frequencies to compensate for Doppler shifts.
-- Tracking amateur satellites using up-to-date TLE (Two-Line Element) data.
-- Integrating seamlessly with Hamlib-supported radio devices.
-- Providing a user-friendly interface via Streamlit.
+## Getting Started
 
-## Key Features
+### Prerequisites
 
-1. **Doppler Shift Calculation**
+- Python 3.8+
+- Streamlit
+- Hamlib
+- Requests
+- Skyfield
 
-   - Dynamically adjusts frequencies in real-time based on satellite movement.
-
-2. **Satellite Tracking**
-
-   - Supports TLE-based satellite tracking and updates the satellite list automatically if the local file is outdated.
-
-3. **Radio Device Integration**
-
-   - Compatible with multiple devices through Hamlib.
-   - Configurable options for VFO, modes, and frequencies.
-
-4. **Streamlit Interface**
-   - Easy-to-navigate sidebar for selecting satellites, configuring radios, and controlling tracking sessions.
-
-## System Requirements
-
-- Python 3.8 or later
-- Hamlib library installed on your system
-- Internet connection for downloading TLE files
-
-## Installation
+### Installation
 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/dplr-satellite-tracker.git
-   cd dplr-satellite-tracker
+   git clone https://github.com/echo-gravitas/Sat-Track.git
+   cd Sat-Track
    ```
 
 2. Install dependencies:
@@ -50,113 +36,45 @@ This application simplifies satellite tracking and frequency management by:
    pip install -r requirements.txt
    ```
 
-3. Ensure Hamlib is installed:
-
-   - On Debian/Ubuntu:
-     ```bash
-     sudo apt-get install libhamlib-utils
-     ```
-   - On macOS:
-     ```bash
-     brew install hamlib
-     ```
-
-4. Run the application:
+3. Run the application:
    ```bash
    streamlit run main.py
    ```
 
+## Usage
+
+1. Configure your station location (latitude, longitude, and elevation) in the sidebar.
+2. Select your device and rig from the available options.
+3. Set receive (RCV) and send (SND) VFO settings.
+4. Start tracking a satellite from the list, and the app will display real-time tracking information.
+
+## File Structure
+
+- `main.py`: Entry point of the application with Streamlit integration.
+- `functions.py`: Helper functions for Doppler shift calculation, TLE loading, and device management.
+- `settings.py`: Contains default configuration settings such as frequency ranges and URLs.
+- `tle.txt`: Stores the TLE data for satellite tracking.
+
 ## Configuration
 
-### Station Location
+Modify `settings.py` to customize the application:
 
-Update the `station` variable in `main.py` with your location coordinates:
-
-```python
-station = Topos(
-    latitude_degrees=47.165101053547325,
-    longitude_degrees=8.295939429046944,
-    elevation_m=495
-)
-```
-
-### TLE File Management
-
-The application downloads and caches TLE data in `tle.txt`. If the file is older than 2 hours, it is automatically updated from [CelesTrak](https://celestrak.org/).
-
-### Supported Devices
-
-Ensure your Hamlib-compatible device is connected and listed under `/dev/`. The application includes pre-configured support for common Icom radios:
-
-- IC-705
-- IC-7300
-- IC-7760
-
-## How to Use
-
-1. Start the application with `streamlit run main.py`.
-2. Use the sidebar to:
-   - Select a satellite from the loaded TLE list.
-   - Choose your connected radio device, VFO, and operating mode.
-3. Begin tracking by clicking **Start Tracking**. The application will:
-   - Adjust frequencies for Doppler shift in real-time.
-   - Display satellite position, frequency, and tracking information.
-4. Stop tracking or set split mode using the sidebar controls.
-
-## Technical Details
-
-### Doppler Shift Calculation
-
-The Doppler shift is calculated using the formula:
-
-```python
-def doppler_shift(freq, rad_vel):
-    return freq * (1 - (rad_vel / 299792.458))
-```
-
-Where:
-
-- `freq` is the original frequency in Hz.
-- `rad_vel` is the radial velocity in km/s.
-- `299792.458` is the speed of light in km/s.
-
-### TLE Handling
-
-The application loads satellite data using the Skyfield library, which reads TLE files to calculate satellite positions:
-
-```python
-satellites = load.tle_file(TLE_FILENAME)
-```
-
-### Hamlib Integration
-
-Hamlib is used to communicate with the connected radio device:
-
-```python
-rig = Hamlib.Rig(rig_model=selected_rig_id)
-rig.open()
-rig.set_freq(vfo, adjusted_frequency)
-rig.close()
-```
-
-## Contribution
-
-We welcome contributions! To contribute:
-
-1. Fork the repository.
-2. Create a feature branch.
-3. Submit a pull request with detailed descriptions of your changes.
+- `DEFAULT_LAT`, `DEFAULT_LNG`, `DEFAULT_ALT`: Default location settings.
+- `MIN_FREQ`, `MAX_FREQ`: Frequency range for tracking.
+- `AVAILABLE_RIG_IDS`: Supported rigs and their IDs.
+- `TLE_URL`: URL to fetch TLE data.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please submit a pull request or open an issue for any suggestions or improvements.
 
 ## Acknowledgments
 
-- **Skyfield** for satellite calculations.
-- **Hamlib** for radio device integration.
-- **Streamlit** for the interactive interface.
-
----
-
-Enjoy seamless satellite tracking and efficient communication with DPLR Satellite Tracker!
+- [CelesTrak](https://celestrak.org/) for TLE data.
+- [Hamlib](https://hamlib.github.io/) for radio control libraries.
+- [Streamlit](https://streamlit.io/) for the interactive web application framework.
+- [Skyfield](https://rhodesmill.org/skyfield/) for accurate astronomical computations.
