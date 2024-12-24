@@ -292,9 +292,7 @@ if set_snd_settings_btn:
         sel_snd_freq,
         sel_snd_passband
     )
-
-
-
+   
 if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary", disabled=selected_device is None):
     sat_tracking()
 
