@@ -36,6 +36,37 @@ def get_mode(mode_name):
         "USB": Hamlib.RIG_MODE_USB,
         "LSB": Hamlib.RIG_MODE_LSB,
         "FM": Hamlib.RIG_MODE_FMN,
+        "AM": Hamlib.RIG_MODE_AM,
         "CW": Hamlib.RIG_MODE_CW
     }
     return mode_mapping.get(mode_name, Hamlib.RIG_MODE_USB)
+
+def disconnect_rig(rig, vfo, freq):
+    """Disconnect from rig and reset frequency"""
+    rig.open()
+    #rig.set_vfo(vfo)
+    rig.set_freq(vfo, freq)
+    rig.close()
+
+def set_split(rig, freq):
+    """Set split mode"""
+    rig.open()
+    rig.set_split_mode(Hamlib.RIG_SPLIT_ON)
+    rig.set_split_freq(Hamlib.RIG_VFO_OTHER, freq)
+    rig.close()
+
+def set_rcv_settings(rig, vfo, mode, freq, passband):
+    """Set RCV VFO settings"""
+    rig.open()
+    #rig.set_vfo(sel_rcv_vfo)
+    rig.set_mode(mode, passband)
+    rig.set_freq(vfo, freq)
+    rig.close()
+
+def set_snd_settings(rig, vfo, mode, freq, passband):
+    """Set SND VFO settings"""
+    rig.open()
+    #rig.set_vfo(sel_snd_vfo)
+    rig.set_mode(mode, passband)
+    rig.set_freq(vfo, freq)
+    rig.close()
