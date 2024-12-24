@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import time
 import requests
 import Hamlib
-from skyfield.api import load
+from skyfield.api import load, Topos
 import streamlit as sl
 from functions import (
     doppler_shift,
@@ -13,11 +13,15 @@ from functions import (
     get_vfo,
     get_mode,
     disconnect_rig,
-    set_split
+    set_snd_settings,
+    set_split,
+    set_rcv_settings,
     )
 from settings import (
     APP_NAME,
-    STATION,
+    DEFAULT_LAT,
+    DEFAULT_LNG,
+    DEFAULT_ALT,
     VFOS,
     MODES,
     MIN_FREQ,
@@ -69,8 +73,6 @@ satellites = load.tle_file(TLE_FILENAME)
 
 os_available_devices = list_devices("tty.usb")
 
-
-
 # Sidebar Content
 
 with sl.sidebar:
@@ -91,15 +93,15 @@ with sl.sidebar:
 
     with col1:
         
-        STATION_LNG = sl.text_input("QTH Lng", value=47.165101053547325)
+        STATION_LNG = sl.number_input("QTH Lng", value=DEFAULT_LNG, format="%0.6f", step=None)
 
     with col2: 
         
-        STATION_LAT = sl.text_input("QTH Lat", value=8.295939429046944)
+        STATION_LAT = sl.number_input("QTH Lat", value=DEFAULT_LAT, format="%0.6f", step=None)
 
     with col3:
 
-        STATION_ELEV = sl.text_input("Elevation (m)", value=495)
+        STATION_ELEV = sl.number_input("Elevation (m)", value=DEFAULT_ALT)
 
     sl.subheader("Device Settings", divider=True)
 
@@ -116,8 +118,6 @@ with sl.sidebar:
         selected_rig_id = AVAILABLE_RIG_IDS[selected_rig_key]
 
     with expander("Set RCV VFO Settings"):
-
-        sl.subheader("RCV VFO Settings",divider=True)
 
         col1,col2 = sl.columns(2)
 
@@ -149,12 +149,15 @@ with sl.sidebar:
                 value=DEFAULT_PASSBAND
             )
 
-        set_rcv_settings = sl.button("Set RCV Settings", use_container_width=True, type="secondary", disabled=selected_device is None)
+        set_rcv_settings_btn = sl.button(
+            "Set RCV Settings",
+            use_container_width=True,
+            type="primary",
+            disabled=selected_device is None
+        )
 
     with expander("Set SND VFO Settings"):
         
-        sl.subheader("SND VFO Settings",divider=True)
-
         col1,col2 = sl.columns(2)
 
         with col1:
@@ -181,30 +184,22 @@ with sl.sidebar:
                 value=DEFAULT_PASSBAND
             )
 
-        set_snd_settings = sl.button("Set SND Settings", use_container_width=True, type="secondary", disabled=selected_device is None)
+        set_snd_settings_btn = sl.button(
+            "Set SND Settings",
+            use_container_width=True,
+            type="primary",
+            disabled=selected_device is None
+            )
+        
+    with expander("Tracking Settings"):
 
-        sl.subheader("Tracking Settings", divider=True)
-
-    col1,col2 = sl.columns(2)
-
-    with col1:
-    
         selected_interval = sl.select_slider(
             "Update Interval (s)",
             options=[0.1,0.5,1,3,5,10],
             value=1
         )
 
-    with col2:
-
-        listen_only = sl.checkbox("RCV only")
-
-Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
-rig = Hamlib.Rig(rig_model=selected_rig_id)
-rig.set_conf("rig_pathname", f"/dev/{selected_device}")
-
-#if selected_device is not None:
-#    rig.open()
+        listen_only = sl.toggle("RCV only")
 
 sl.title(f"Tracking {selected_sat}")
 
@@ -216,14 +211,22 @@ debug = f'''
     Satellite:\t{selected_sat}
     Interval:\t{selected_interval} s
     TLE date:\t{MOD_DATE.strftime("%A, %d. %B %Y %H:%M:%S")}
-    VFO:\t\t{sel_rcv_vfo}
-    Mode:\t\t{sel_rcv_mode}
     Passband:\t{sel_rcv_passband} Hz
     Latitude:\t{STATION_LAT}°
     Longitude:\t{STATION_LNG}°
     Elevation:\t{STATION_ELEV} m
 '''
 sl.code(debug, language=None)
+
+Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
+rig = Hamlib.Rig(rig_model=selected_rig_id)
+rig.set_conf("rig_pathname", f"/dev/{selected_device}")
+
+STATION = Topos(
+    latitude_degrees=STATION_LAT,
+    longitude_degrees=STATION_LNG,
+    elevation_m=STATION_ELEV
+    )
 
 def sat_tracking():
     """Tracks Satellite and calculates freq shift for doppler effect"""
@@ -272,21 +275,25 @@ def sat_tracking():
         # Wartezeit vor der nächsten Aktualisierung
         time.sleep(selected_interval)
 
+if set_rcv_settings_btn:
+    set_rcv_settings(
+        rig,
+        sel_rcv_vfo,
+        sel_rcv_mode,
+        sel_rcv_freq,
+        sel_rcv_passband
+    )
+
+if set_snd_settings_btn:
+    set_snd_settings(
+        rig,
+        sel_snd_vfo,
+        sel_snd_mode,
+        sel_snd_freq,
+        sel_snd_passband
+    )
 
 
-if set_rcv_settings:
-    rig.open()
-    rig.set_vfo(sel_rcv_vfo)
-    rig.set_mode(sel_rcv_mode, sel_rcv_passband)
-    rig.set_freq(sel_rcv_vfo, sel_rcv_freq)
-    rig.close()
-
-if set_snd_settings:
-    rig.open()
-    rig.set_vfo(sel_snd_vfo)
-    rig.set_mode(sel_snd_mode, sel_snd_passband)
-    rig.set_freq(sel_snd_vfo, sel_snd_freq)
-    rig.close()
 
 if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary", disabled=selected_device is None):
     sat_tracking()
