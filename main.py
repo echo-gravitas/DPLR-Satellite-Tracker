@@ -80,22 +80,20 @@ with sl.sidebar:
     expander = sl.expander
 
     sl.title(APP_NAME)
-    
-    sl.caption("Track satellites frequencies with ease. Doppler effect correction? Sat Tracker will do it for you.")
 
     selected_sat = sl.selectbox("Select Satellite", SATELLITE_NAMES)
 
     satellite = {sat.name: sat for sat in satellites}[selected_sat]
 
     sl.subheader("Station Config",divider=True)
-    
+   
     col1,col2,col3 = sl.columns(3)
 
     with col1:
-        
+
         STATION_LNG = sl.number_input("QTH Lng", value=DEFAULT_LNG, format="%0.6f", step=None)
 
-    with col2: 
+    with col2:
         
         STATION_LAT = sl.number_input("QTH Lat", value=DEFAULT_LAT, format="%0.6f", step=None)
 
@@ -169,6 +167,7 @@ with sl.sidebar:
         col1,col2 = sl.columns(2)
         
         with col1:
+
             sel_snd_freq = sl.number_input(
                 "SND Center Frequency (Hz)",
                 min_value = MIN_FREQ,
@@ -177,6 +176,7 @@ with sl.sidebar:
             )
         
         with col2:
+
             sel_snd_passband = sl.number_input(
                 "SND Passband Width",
                 min_value=MIN_PASSBAND,
@@ -216,6 +216,7 @@ debug = f'''
     Longitude:\t{STATION_LNG}°
     Elevation:\t{STATION_ELEV} m
 '''
+
 sl.code(debug, language=None)
 
 Hamlib.rig_set_debug(Hamlib.RIG_DEBUG_ERR)
@@ -293,11 +294,24 @@ if set_snd_settings_btn:
         sel_snd_passband
     )
    
-if sl.sidebar.button("Start Tracking", use_container_width=True, type="primary", disabled=selected_device is None):
+if sl.sidebar.button(
+    "Start Tracking",
+    use_container_width=True,
+    type="primary",
+    disabled=selected_device is None
+    ):
     sat_tracking()
 
-if sl.sidebar.button("Stop Tracking", use_container_width=True, type="secondary", disabled=selected_device is None):
+if sl.sidebar.button(
+    "Stop Tracking",
+    use_container_width=True,
+    type="secondary",
+    disabled=selected_device is None
+    ):
     disconnect_rig(rig, sel_rcv_vfo, sel_rcv_freq)
 
-if sl.sidebar.button("Set Split Mode", use_container_width=True, type="secondary",disabled=selected_device is None):
-    set_split(rig, sel_snd_freq)
+if sl.sidebar.button(
+    "Set Split Mode",
+    use_container_width=True,
+    type="secondary",disabled=selected_device is None):
+    set_split(rig,sel_snd_freq)
